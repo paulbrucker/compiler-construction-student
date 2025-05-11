@@ -19,14 +19,12 @@ def compileModule(m: mod, cfg: CompilerConfig) -> WasmModule:
         funcTable=WasmFuncTable([]),
         funcs=[WasmFunc(idMain, [], None, locals, instrs)])
 
-def tyToWasmValtype(ty) -> WasmValtype:
+def tyToWasmValtype(ty: ty) -> Literal['i64', 'i32']:
     match(ty):
         case Int():
             return 'i64'
         case Bool():
             return 'i32'
-        case _:
-            raise Exception("Type " + ty + "Not implemented")
 
 def compileStmts(stmts: list[stmt]) -> list[WasmInstr]:
     if len(stmts) > 0:
@@ -44,8 +42,9 @@ def compileStmts(stmts: list[stmt]) -> list[WasmInstr]:
                 loopStart = "$loop_start_" + str(n)
                 n += 1 
                 loopCond = compileExp(cond) + [WasmInstrIf(None, [], [WasmInstrBranch(WasmId(loopExit), False)])]
-                loop = [WasmInstrLoop(WasmId(loopStart), loopCond + compileStmts(body) + [WasmInstrBranch(WasmId(loopStart), False)])]   
-                return [WasmInstrBlock(WasmId(loopExit), None, loop)] + compileStmts(stmts)
+                loop: list[WasmInstr] = [WasmInstrLoop(WasmId(loopStart), loopCond + compileStmts(body) + [WasmInstrBranch(WasmId(loopStart), False)])]   
+                result: list[WasmInstr] = [WasmInstrBlock(WasmId(loopExit), None, loop)] + compileStmts(stmts)
+                return result
             case _:
                 raise Exception("Unknown statement: " + str(stmt))
     return []
@@ -60,7 +59,10 @@ def compileExp(exp: exp) -> list[WasmInstr]:
             return [WasmInstrVarLocal('get', identToWasmId(id, tyOfExp(exp)))]
         case Call(name, args):
             compiledArgs = [instr for arg in args for instr in compileExp(arg)]
-            compiledArgs.append(WasmInstrCall(identToWasmId(name, None if len(args) == 0 else tyOfExp(args[0]))))
+            type = None
+            if len(args) != 0:
+                type = tyOfExp(args[0])
+            compiledArgs.append(WasmInstrCall(identToWasmId(name, type)))
             return compiledArgs
         case UnOp(op, e):
             type = tyToWasmValtype(tyOfExp(e))
@@ -82,21 +84,23 @@ def compileBinOp(left: exp, op: binaryop, right: exp) -> list[WasmInstr]:
     rightTy = tyOfExp(right)
     if leftTy != rightTy:
             raise Exception("Left and right type not equal")
-    match(op):
-        case Add() | Mul() | Sub():
-            return compileExp(left) + compileExp(right) + [WasmInstrNumBinOp(tyToWasmValtype(leftTy), binOpToLiteral(op))]
-        case And():
+    opLit = binOpToLiteral(op)
+    match(opLit):
+        case 'add' | 'mul' | 'sub':
+            return compileExp(left) + compileExp(right) + [WasmInstrNumBinOp(tyToWasmValtype(leftTy), opLit)]
+        case 'and':
             return compileExp(left) + [WasmInstrIf('i32', compileExp(right), [WasmInstrConst('i32', 0)])]
-        case Or():
+        case 'or':
             return compileExp(left) + [WasmInstrIf('i32', [WasmInstrConst('i32', 1)], compileExp(right))]
-        case Eq() | NotEq() | Greater() | GreaterEq() | Less() | LessEq():
-            typeId = tyToWasmValtype(leftTy)
-            return compileExp(left) + compileExp(right) + [WasmInstrIntRelOp(typeId, binOpToLiteral(op))]
+        # case Eq() | NotEq() | Greater() | GreaterEq() | Less() | LessEq():
         case _:
-            raise Exception("Unsupported binary op")
+            typeId = tyToWasmValtype(leftTy)
+            return compileExp(left) + compileExp(right) + [WasmInstrIntRelOp(typeId, opLit)]
+        # case _:
+        #     raise Exception("Unsupported binary op")
 
 
-def identToWasmId(ident: ident, ty: ty=None) -> WasmId:
+def identToWasmId(ident: ident, ty: Optional[ty]=None) -> WasmId:
     match ident.name:
         case 'print':
             assert(ty)
@@ -110,12 +114,17 @@ def identToWasmId(ident: ident, ty: ty=None) -> WasmId:
             return WasmId('$' + ident.name)
 
 def tyOfExp(e: exp) -> ty:
-    ty = e.ty
-    if not ty or ty == Void:
-        raise Exception(str(e) + " has no type")
-    return ty.ty
+    if e.ty:
+        match(e.ty):
+            case NotVoid():
+                return e.ty.ty
+            case Void():
+                raise Exception("Is void")
+    raise Exception(str(e) + " has no type")
 
-def binOpToLiteral(op: binaryop):
+type binaryOpLiteral = Literal['add', 'sub', 'mul', 'lt_s', 'le_s', 'gt_s', 'ge_s', 'eq', 'ne', 'and', 'or']
+
+def binOpToLiteral(op: binaryop) -> binaryOpLiteral:
     match op:
         case Add():
             return 'add'
