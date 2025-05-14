@@ -1,0 +1,15 @@
+%import common.WS_INLINE
+
+WHITESPACE: /[\r\n\t ]+/
+
+STRING: /"[^"]*"/
+
+INT: /\d+/
+
+LBRACE: "{"
+RBRACE: "}"
+COLON: ":"
+COMMA: ","
+
+%ignore WHITESPACE
+start: STRING INT LBRACE RBRACE COLON COMMA
