@@ -38,6 +38,7 @@ def ruleEntryListNotEmpty(toks: TokenStream) -> dict[str, Json]:
         else:
             break
     return result
+
 def ruleEntry(toks: TokenStream) -> tuple[str, Json]:
     """Parse a single entry: string ':' value."""
     key = ruleString(toks)
